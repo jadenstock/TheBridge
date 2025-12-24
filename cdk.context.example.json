@@ -1,3 +1,5 @@
 {
-  "slack_webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+  "slack_webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
+  "ski_forecast_webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
+  "openai_api_key": "sk-YOUR-OPENAI-API-KEY"
 }
