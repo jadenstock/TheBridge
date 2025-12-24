@@ -43,13 +43,13 @@ class SlackBridgeStack(Stack):
         )
 
         # EventBridge rule to trigger Lambda on a schedule
-        # This runs every 5 minutes as an example - adjust as needed
+        # This runs once daily
         rule = events.Rule(
             self,
             "SlackPingSchedule",
-            # Every 5 minutes
-            schedule=events.Schedule.rate(Duration.minutes(5)),
-            description="Triggers Slack ping Lambda every 5 minutes",
+            # Once per day
+            schedule=events.Schedule.rate(Duration.days(1)),
+            description="Triggers Slack ping Lambda daily",
         )
 
         # Add Lambda as target for the EventBridge rule
