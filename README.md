@@ -11,11 +11,12 @@ The initial setup includes:
 
 ## Prerequisites
 
-1. **AWS Account** with configured credentials
+1. **AWS Account**
 2. **Slack Workspace** with admin access
 3. **AWS CDK CLI** (install with: `npm install -g aws-cdk`)
-4. **uv** (Python package manager: https://docs.astral.sh/uv/)
-5. **Node.js** (for CDK CLI)
+4. **AWS CLI** (for credential management)
+5. **uv** (Python package manager: https://docs.astral.sh/uv/)
+6. **Node.js** (for CDK CLI)
 
 ## Setup
 
@@ -25,11 +26,58 @@ The initial setup includes:
 # Install Python dependencies
 uv sync
 
+# Install AWS CLI (if not already installed)
+# On Linux:
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+rm -rf aws awscliv2.zip
+
+# On macOS:
+brew install awscli
+
 # Install CDK CLI (if not already installed)
 npm install -g aws-cdk
 ```
 
-### 2. Set Up Slack Webhook
+### 2. Configure AWS Credentials
+
+**For Local Development:**
+
+1. **Create an IAM user** (if you don't have one):
+   - Go to AWS Console → IAM → Users → Create user
+   - User name: `cdk-admin` (or your preference)
+   - Attach policy: `AdministratorAccess` (for personal dev account)
+
+2. **Create access keys**:
+   - IAM → Users → `cdk-admin` → Security credentials
+   - Click "Create access key"
+   - Choose "Command Line Interface (CLI)"
+   - Download/copy the Access Key ID and Secret Access Key
+
+3. **Configure AWS CLI**:
+   ```bash
+   aws configure
+   ```
+
+   Provide when prompted:
+   - AWS Access Key ID: `[your access key]`
+   - AWS Secret Access Key: `[your secret key]`
+   - Default region name: `us-east-1` (or your preferred region)
+   - Default output format: `json` (or press Enter)
+
+   This stores credentials in `~/.aws/credentials` (outside your git repo, so they won't leak).
+
+4. **Verify it works**:
+   ```bash
+   aws sts get-caller-identity
+   ```
+
+**For GitHub Actions (CI/CD):**
+
+See the [GitHub Actions Deployment](#github-actions-deployment) section below for OIDC setup (no long-lived credentials needed).
+
+### 3. Set Up Slack Webhook
 
 1. Go to your Slack workspace settings
 2. Navigate to **Apps** → **Manage** → **Custom Integrations** → **Incoming Webhooks**
@@ -37,7 +85,7 @@ npm install -g aws-cdk
 4. Select the channel where you want messages posted
 5. Copy the webhook URL (looks like: `https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXX`)
 
-### 3. Configure Slack Webhook URL
+### 4. Configure Slack Webhook URL
 
 Create a `cdk.context.json` file in the project root:
 
@@ -61,19 +109,16 @@ Alternatively, you can pass the webhook URL during deployment:
 cdk deploy -c slack_webhook_url=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
 ```
 
-### 4. Bootstrap CDK (First Time Only)
+### 5. Bootstrap CDK (First Time Only)
 
-If this is your first time using CDK in your AWS account/region:
-
-```bash
-cdk bootstrap aws://ACCOUNT-ID/REGION
-```
-
-Or let CDK detect your account/region automatically:
+Bootstrap CDK in your AWS account/region (only needs to be done once per account/region):
 
 ```bash
+source .venv/bin/activate
 cdk bootstrap
 ```
+
+This creates the necessary S3 buckets and IAM roles for CDK deployments.
 
 ## Deployment
 
@@ -207,3 +252,98 @@ cdk destroy
 
 - Check CloudFormation console for detailed error messages
 - Ensure you're not hitting AWS service quotas
+
+## GitHub Actions Deployment
+
+To deploy automatically from GitHub Actions using OIDC (no stored credentials):
+
+### 1. Create OIDC Provider in AWS
+
+1. Go to AWS Console → IAM → Identity providers
+2. Click "Add provider"
+3. Provider type: `OpenID Connect`
+4. Provider URL: `https://token.actions.githubusercontent.com`
+5. Audience: `sts.amazonaws.com`
+6. Click "Add provider"
+
+### 2. Create IAM Role for GitHub Actions
+
+1. Go to IAM → Roles → Create role
+2. Select "Web identity"
+3. Identity provider: `token.actions.githubusercontent.com`
+4. Audience: `sts.amazonaws.com`
+5. GitHub organization: `[your-github-username]`
+6. GitHub repository: `TheBridge` (or your repo name)
+7. Click "Next"
+8. Attach policy: `AdministratorAccess` (or create a custom policy with only CDK permissions)
+9. Role name: `GitHubActionsDeployRole`
+10. Click "Create role"
+11. **Copy the Role ARN** (looks like: `arn:aws:iam::296674252477:role/GitHubActionsDeployRole`)
+
+### 3. Add GitHub Secrets
+
+Go to your GitHub repo → Settings → Secrets and variables → Actions → New repository secret:
+
+1. `AWS_ROLE_ARN`: The role ARN from step 2
+2. `AWS_REGION`: `us-east-1` (or your region)
+3. `SLACK_WEBHOOK_URL`: Your Slack webhook URL
+
+### 4. Create GitHub Actions Workflow
+
+Create `.github/workflows/deploy.yml`:
+
+```yaml
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install AWS CDK
+        run: npm install -g aws-cdk
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy CDK stack
+        run: |
+          source .venv/bin/activate
+          cdk deploy --require-approval never -c slack_webhook_url=${{ secrets.SLACK_WEBHOOK_URL }}
+```
+
+Now every push to `main` will automatically deploy your infrastructure.
+
+### Manual Trigger
+
+You can also manually trigger deployments from GitHub:
+- Go to Actions → Deploy to AWS → Run workflow
