@@ -2,12 +2,39 @@
 
 AWS-hosted agent workflow system with Slack interface. This project uses AWS CDK (Python) to deploy infrastructure.
 
+## Projects
+
+### Crystal Mountain Weekday Ski Forecast
+
+AI-powered ski conditions analyzer for weekday-only pass holders at Crystal Mountain. The system:
+- **Fetches data** from 8+ weather sources including NWS, NWAC, Mount Rainier forecasts
+- **Analyzes conditions** using OpenAI to produce weekday-specific ski recommendations
+- **Posts to Slack** with scored forecasts and "best day to ski" recommendations
+- **Runs daily** via EventBridge scheduler
+
+#### Data Sources
+
+The forecaster aggregates data from:
+1. **NWS/NOAA 7-Day Forecast** - Official weather.gov point forecast
+2. **NWS Seattle Area Forecast Discussion (AFD)** - Technical forecast discussion with snow levels and timing
+3. **Mount Rainier Recreation Forecast** - Paradise snowfall estimates (adjusted for Crystal)
+4. **NWAC Mountain Weather Forecast** - Pacific Northwest mountain-specific forecast
+5. **NWAC Weather Station** - Real-time observations from Crystal Mountain
+6. **Snow-Forecast.com** - 6-day snow forecast by elevation
+7. **OnTheSnow** - Resort weather conditions
+8. **WSDOT Road Conditions** - SR 410 road status and chain requirements
+
+### Hevy Workout Analyzer
+
+Fitness data analyzer that processes workout data from the Hevy app.
+
 ## Architecture
 
-The initial setup includes:
-- **Lambda Function**: Python-based function that sends messages to Slack
-- **EventBridge Rule**: Cron trigger that runs the Lambda every 5 minutes
-- **Slack Integration**: Uses Slack Incoming Webhooks for posting messages
+The system uses a two-Lambda architecture:
+- **Data Fetcher Lambda**: Fetches and formats weather data from multiple sources
+- **Analyzer Lambda**: Uses OpenAI to analyze data and generate ski recommendations
+- **EventBridge Rule**: Cron trigger that runs daily
+- **Slack Integration**: Posts formatted reports to Slack via webhooks
 
 ## Prerequisites
 

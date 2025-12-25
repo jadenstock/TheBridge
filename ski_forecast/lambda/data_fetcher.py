@@ -184,10 +184,8 @@ def format_onthesnow_markdown(html_data: str) -> str:
 
 def format_nwac_markdown(html_data: str) -> str:
     """Extract and format NWAC avalanche/weather data as markdown."""
-    md = "### NWAC - Northwest Avalanche Center\n\n"
-    md += "**Sources**:\n"
-    md += "- [Crystal Weather Data](https://nwac.us/weatherdata/crystalskiarea/now/)\n"
-    md += "- [Mountain Weather Forecast](https://nwac.us/mountain-weather-forecast/)\n\n"
+    md = "### NWAC - Northwest Avalanche Center (Weather Station)\n\n"
+    md += "**Source**: [Crystal Weather Data](https://nwac.us/weatherdata/crystalskiarea/now/)\n\n"
 
     try:
         soup = BeautifulSoup(html_data, 'html.parser')
@@ -232,6 +230,124 @@ def format_nwac_markdown(html_data: str) -> str:
 
     except Exception as e:
         md += f"Error parsing NWAC: {str(e)}\n\n"
+
+    return md
+
+
+def format_nws_afd_markdown(text_data: str) -> str:
+    """Format NWS Area Forecast Discussion as markdown."""
+    md = "### NWS Seattle Area Forecast Discussion\n\n"
+    md += "**Source**: [NWS Seattle AFD](https://forecast.weather.gov/product.php?site=SEW&issuedby=SEW&product=AFD&format=txt)\n\n"
+
+    try:
+        if text_data:
+            # Check if this is HTML or plain text
+            if text_data.strip().startswith('<!DOCTYPE') or text_data.strip().startswith('<html'):
+                # Parse HTML to extract the pre tag content
+                soup = BeautifulSoup(text_data, 'html.parser')
+                pre_tag = soup.find('pre')
+                if pre_tag:
+                    text_data = pre_tag.get_text()
+                else:
+                    md += "*Unable to extract text from HTML response*\n\n"
+                    return md
+
+            # Clean up excessive newlines
+            cleaned = '\n'.join(line.rstrip() for line in text_data.split('\n'))
+            # Limit to first 3000 characters to keep it manageable
+            md += f"```\n{cleaned[:3000]}\n```\n\n"
+            if len(cleaned) > 3000:
+                md += "*[Forecast discussion truncated for length]*\n\n"
+        else:
+            md += "*No forecast discussion available*\n\n"
+    except Exception as e:
+        md += f"Error formatting AFD: {str(e)}\n\n"
+
+    return md
+
+
+def format_mount_rainier_forecast_markdown(text_data: str) -> str:
+    """Format Mount Rainier Recreation Forecast as markdown."""
+    md = "### Mount Rainier Recreation Forecast\n\n"
+    md += "**Source**: [NWS Mount Rainier Forecast](https://forecast.weather.gov/product.php?site=SEW&issuedby=SEW&product=REC&format=txt)\n\n"
+    md += "*Note: Paradise snowfall estimates can be reduced by 1/3 to 1/2 for Crystal Mountain*\n\n"
+
+    try:
+        if text_data:
+            # Check if this is HTML or plain text
+            if text_data.strip().startswith('<!DOCTYPE') or text_data.strip().startswith('<html'):
+                # Parse HTML to extract the pre tag content
+                soup = BeautifulSoup(text_data, 'html.parser')
+                pre_tag = soup.find('pre')
+                if pre_tag:
+                    text_data = pre_tag.get_text()
+                else:
+                    md += "*Unable to extract text from HTML response*\n\n"
+                    return md
+
+            # Clean up and format the text
+            cleaned = '\n'.join(line.rstrip() for line in text_data.split('\n'))
+            # Limit to first 2500 characters
+            md += f"```\n{cleaned[:2500]}\n```\n\n"
+            if len(cleaned) > 2500:
+                md += "*[Forecast truncated for length]*\n\n"
+        else:
+            md += "*No Mount Rainier forecast available*\n\n"
+    except Exception as e:
+        md += f"Error formatting Mount Rainier forecast: {str(e)}\n\n"
+
+    return md
+
+
+def format_nwac_forecast_markdown(html_data: str) -> str:
+    """Extract and format NWAC Mountain Weather Forecast as markdown."""
+    md = "### NWAC Mountain Weather Forecast\n\n"
+    md += "**Source**: [NWAC Mountain Weather Forecast](https://nwac.us/mountain-weather-forecast/)\n\n"
+
+    try:
+        soup = BeautifulSoup(html_data, 'html.parser')
+
+        # Look for the main forecast content
+        # NWAC typically has the forecast in article or main content areas
+        forecast_content = soup.find('article') or soup.find('main') or soup.find('div', class_='content')
+
+        if forecast_content:
+            # Extract text from the forecast
+            text = forecast_content.get_text(separator='\n', strip=True)
+
+            # Look for key sections
+            lines = []
+            for line in text.split('\n'):
+                line = line.strip()
+                # Filter for relevant forecast information
+                if line and len(line) > 20:
+                    lines.append(line)
+                    if len(lines) >= 50:  # Limit to first 50 lines
+                        break
+
+            if lines:
+                md += '\n'.join(lines) + "\n\n"
+            else:
+                md += "*Unable to parse forecast content*\n\n"
+        else:
+            # Fallback: extract weather-related text
+            text = soup.get_text()
+            keywords = ['snow', 'wind', 'temperature', 'precipitation', 'forecast', 'weather', 'storm']
+            lines = []
+            for line in text.split('\n'):
+                line = line.strip()
+                if any(keyword in line.lower() for keyword in keywords) and len(line) > 30:
+                    lines.append(line)
+                    if len(lines) >= 30:
+                        break
+
+            if lines:
+                md += '\n'.join(f"- {line[:300]}" for line in lines) + "\n\n"
+            else:
+                md += "*Unable to extract forecast data*\n\n"
+
+    except Exception as e:
+        md += f"Error parsing NWAC forecast: {str(e)}\n\n"
 
     return md
 
@@ -311,7 +427,43 @@ def fetch_and_format_all_sources() -> str:
 
     md += "---\n\n"
 
-    # 2. Fetch and format Snow-Forecast.com
+    # 2. Fetch and format NWS Seattle Area Forecast Discussion
+    print("Fetching NWS Seattle AFD...")
+    afd_url = "https://forecast.weather.gov/product.php?site=SEW&issuedby=SEW&product=AFD&format=txt"
+    afd_result = fetch_url(afd_url)
+
+    if 'error' not in afd_result and 'data' in afd_result:
+        md += format_nws_afd_markdown(afd_result['data'])
+    else:
+        md += f"### ❌ NWS Seattle AFD\n\nError: {afd_result.get('error', 'Unknown error')}\n\n"
+
+    md += "---\n\n"
+
+    # 3. Fetch and format Mount Rainier Recreation Forecast
+    print("Fetching Mount Rainier Recreation Forecast...")
+    mtr_url = "https://forecast.weather.gov/product.php?site=SEW&issuedby=SEW&product=REC&format=txt"
+    mtr_result = fetch_url(mtr_url)
+
+    if 'error' not in mtr_result and 'data' in mtr_result:
+        md += format_mount_rainier_forecast_markdown(mtr_result['data'])
+    else:
+        md += f"### ❌ Mount Rainier Recreation Forecast\n\nError: {mtr_result.get('error', 'Unknown error')}\n\n"
+
+    md += "---\n\n"
+
+    # 4. Fetch and format NWAC Mountain Weather Forecast
+    print("Fetching NWAC Mountain Weather Forecast...")
+    nwac_forecast_url = "https://nwac.us/mountain-weather-forecast/"
+    nwac_forecast_result = fetch_url(nwac_forecast_url)
+
+    if 'error' not in nwac_forecast_result:
+        md += format_nwac_forecast_markdown(nwac_forecast_result['data'])
+    else:
+        md += f"### ❌ NWAC Mountain Weather Forecast\n\nError: {nwac_forecast_result['error']}\n\n"
+
+    md += "---\n\n"
+
+    # 5. Fetch and format Snow-Forecast.com
     print("Fetching Snow-Forecast.com...")
     snow_url = "https://www.snow-forecast.com/resorts/Crystal-Mountain/6day/mid"
     snow_result = fetch_url(snow_url)
@@ -323,7 +475,7 @@ def fetch_and_format_all_sources() -> str:
 
     md += "---\n\n"
 
-    # 3. Fetch and format OnTheSnow
+    # 6. Fetch and format OnTheSnow
     print("Fetching OnTheSnow...")
     ots_url = "https://www.onthesnow.com/washington/crystal-mountain-wa/weather"
     ots_result = fetch_url(ots_url)
@@ -335,19 +487,19 @@ def fetch_and_format_all_sources() -> str:
 
     md += "---\n\n"
 
-    # 4. Fetch and format NWAC
-    print("Fetching NWAC...")
+    # 7. Fetch and format NWAC Weather Station
+    print("Fetching NWAC Weather Station...")
     nwac_url = "https://nwac.us/weatherdata/crystalskiarea/now/"
     nwac_result = fetch_url(nwac_url)
 
     if 'error' not in nwac_result:
         md += format_nwac_markdown(nwac_result['data'])
     else:
-        md += f"### ❌ NWAC\n\nError: {nwac_result['error']}\n\n"
+        md += f"### ❌ NWAC Weather Station\n\nError: {nwac_result['error']}\n\n"
 
     md += "---\n\n"
 
-    # 5. Fetch and format WSDOT
+    # 8. Fetch and format WSDOT
     print("Fetching WSDOT...")
     wsdot_url = "https://wsdot.com/travel/real-time/mountainpasses/crystal-to-greenwater"
     wsdot_result = fetch_url(wsdot_url)

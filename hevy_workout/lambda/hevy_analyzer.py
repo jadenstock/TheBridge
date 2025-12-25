@@ -52,12 +52,60 @@ def fetch_workout_from_hevy(workout_id: str, api_key: str) -> Dict[str, Any]:
         raise Exception(f"Network error fetching workout: {str(e)}")
 
 
-def format_workout_for_analysis(workout: Dict[str, Any]) -> str:
+def fetch_exercise_history(exercise_id: str, api_key: str, start_date: str, end_date: str) -> Dict[str, Any]:
+    """
+    Fetch exercise history from Hevy API.
+
+    Args:
+        exercise_id: The exercise ID from the workout
+        api_key: Hevy API key
+        start_date: Start date in ISO format (e.g., '2025-09-01T00:00:00Z')
+        end_date: End date in ISO format (e.g., '2025-12-31T23:59:59Z')
+
+    Returns:
+        Exercise history data as dictionary
+    """
+    # URL encode the dates
+    from urllib.parse import quote
+
+    url = f"https://api.hevyapp.com/v1/exercise_history/{exercise_id}?start_date={quote(start_date)}&end_date={quote(end_date)}"
+
+    headers = {
+        'accept': 'application/json',
+        'api-key': api_key
+    }
+
+    print(f"Fetching history for exercise {exercise_id}...")
+
+    req = urllib.request.Request(
+        url,
+        headers=headers,
+        method='GET'
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as response:
+            history_data = json.loads(response.read().decode('utf-8'))
+            print(f"Successfully fetched exercise history")
+            return history_data
+
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8')
+        print(f"Warning: Failed to fetch exercise history {e.code}: {error_body}")
+        # Return empty history rather than failing the whole analysis
+        return {}
+    except urllib.error.URLError as e:
+        print(f"Warning: Network error fetching exercise history: {str(e)}")
+        return {}
+
+
+def format_workout_for_analysis(workout: Dict[str, Any], exercise_histories: Dict[str, Dict[str, Any]] = None) -> str:
     """
     Format workout data into readable text for AI analysis.
 
     Args:
         workout: Raw workout data from Hevy API
+        exercise_histories: Dictionary mapping exercise IDs to their history data
 
     Returns:
         Formatted string describing the workout
@@ -96,6 +144,7 @@ def format_workout_for_analysis(workout: Dict[str, Any]) -> str:
         output.append(f"\n**Exercises ({len(exercises)} total)**:\n")
         for i, exercise in enumerate(exercises, 1):
             exercise_name = exercise.get('title', 'Unknown Exercise')
+            exercise_id = exercise.get('exercise_template_id')
             output.append(f"\n{i}. **{exercise_name}**")
 
             # Include exercise notes if present
@@ -136,6 +185,43 @@ def format_workout_for_analysis(workout: Dict[str, Any]) -> str:
 
                     output.append(set_info)
 
+            # Add exercise history if available
+            if exercise_histories and exercise_id and exercise_id in exercise_histories:
+                history = exercise_histories[exercise_id]
+                output.append(f"\n   **Historical Context**:")
+
+                # Format history data - API returns flat list of sets grouped by workout
+                history_sets = history.get('exercise_history', [])
+                if history_sets:
+                    # Group sets by workout
+                    workouts_dict = {}
+                    for set_data in history_sets:
+                        workout_id = set_data.get('workout_id')
+                        if workout_id not in workouts_dict:
+                            workouts_dict[workout_id] = {
+                                'start_time': set_data.get('workout_start_time', 'Unknown'),
+                                'title': set_data.get('workout_title', ''),
+                                'sets': []
+                            }
+                        workouts_dict[workout_id]['sets'].append(set_data)
+
+                    # Get last 5 workouts (excluding current workout)
+                    workouts = sorted(workouts_dict.values(), key=lambda w: w['start_time'])
+                    recent_workouts = [w for w in workouts if w['start_time'] < workout.get('start_time', '')][-5:]
+
+                    if recent_workouts:
+                        output.append(f"   Previous performances (last {len(recent_workouts)} workouts):")
+                        for hw in recent_workouts:
+                            hw_date = hw['start_time']
+                            hw_sets = hw['sets']
+                            if hw_sets:
+                                # Get max weight and reps from this historical workout
+                                max_weight = max((s.get('weight_kg', 0) for s in hw_sets if s.get('weight_kg')), default=0)
+                                max_reps = max((s.get('reps', 0) for s in hw_sets if s.get('reps')), default=0)
+                                if max_weight > 0:
+                                    max_weight_lbs = round(max_weight * 2.20462, 1)
+                                    output.append(f"   - {hw_date[:10]}: {max_weight_lbs}lbs × {max_reps} reps")
+
     # Notes
     if workout.get('notes'):
         output.append(f"\n**Notes**: {workout['notes']}")
@@ -161,28 +247,32 @@ IMPORTANT NOTES:
 - All weights are in POUNDS (lbs), not kilograms
 - This will be posted to Slack, so use Slack markdown formatting
 - Exercise names, sets, reps, RPE values, and notes are all provided - use them!
+- HISTORICAL CONTEXT is provided for each exercise showing previous performances over the last 6 months
+- Use the historical data to assess progress, identify trends, and provide context
 
 TASK:
-Provide a brief, encouraging analysis of the workout with actionable insights.
+Provide a brief, encouraging analysis of the workout with actionable insights, using historical data to frame progress.
 
 ANALYSIS SHOULD INCLUDE:
 - Overall workout quality assessment (reference specific exercises by name)
+- Progress analysis: Compare today's performance to historical data (weights, reps, volume)
 - Notable achievements or impressive sets (mention specific weights/reps/RPE)
+- Trends: Are they progressing, maintaining, or regressing on specific lifts?
 - Exercise selection and programming observations
 - Volume and intensity analysis (use the RPE values when discussing intensity)
-- Suggestions for progression or areas to focus on
-- Recovery considerations
+- Suggestions for progression based on their history
 
 TONE:
 - Supportive and motivating
 - Specific and technical where appropriate (mention actual exercises, weights, and reps)
-- Brief and actionable (keep it under 300 words)
-- Use emojis sparingly but effectively (💪 🔥 ⚡ 🎯 ✅)
+- Brief and actionable (aim for 250-350 words)
+- Use emojis sparingly but effectively (💪 🔥 ⚡ 🎯 ✅ 📈)
 
 OUTPUT FORMAT (using Slack markdown):
 - Short headline summarizing the workout (use *bold* not **bold**)
-- 3-5 key observations (be specific - mention exercise names, weights, RPE)
-- 1-2 actionable recommendations
+- 3-5 key observations focusing on progress and performance (be specific - mention exercise names, weights, RPE)
+- Highlight any PRs (personal records) or improvements compared to history
+- 1-2 actionable recommendations based on their progression patterns
 - Remember: Use single asterisks (*text*) for bold in Slack, not double asterisks"""
 
     url = "https://api.openai.com/v1/chat/completions"
@@ -200,7 +290,7 @@ OUTPUT FORMAT (using Slack markdown):
             }
         ],
         "temperature": 0.7,
-        "max_tokens": 1000
+        "max_completion_tokens": 2000
     }
 
     headers = {
@@ -237,7 +327,7 @@ def post_to_slack(webhook_url: str, workout_text: str, analysis: str) -> None:
 
     Args:
         webhook_url: Slack webhook URL
-        workout_text: Formatted workout data
+        workout_text: Formatted workout data (not used in message, kept for backwards compatibility)
         analysis: The AI analysis text (already in Slack markdown format)
     """
     # Analysis is already formatted for Slack
@@ -251,16 +341,6 @@ def post_to_slack(webhook_url: str, workout_text: str, analysis: str) -> None:
                 'text': {
                     'type': 'mrkdwn',
                     'text': slack_text
-                }
-            },
-            {
-                'type': 'divider'
-            },
-            {
-                'type': 'section',
-                'text': {
-                    'type': 'mrkdwn',
-                    'text': f"```{workout_text[:500]}{'...' if len(workout_text) > 500 else ''}```"
                 }
             }
         ]
@@ -325,15 +405,42 @@ def handler(event, context):
         workout_data = fetch_workout_from_hevy(workout_id, hevy_api_key)
         print(f"Got workout data")
 
-        # Step 2: Format for analysis
-        workout_text = format_workout_for_analysis(workout_data)
+        # Step 2: Fetch exercise histories
+        exercise_histories = {}
+        exercises = workout_data.get('exercises', [])
+
+        # Calculate date range for history (last 6 months)
+        from datetime import timedelta
+        workout_date = workout_data.get('start_time', datetime.utcnow().isoformat() + 'Z')
+        try:
+            workout_dt = datetime.fromisoformat(workout_date.replace('Z', '+00:00'))
+            end_date = workout_dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+            start_date = (workout_dt - timedelta(days=180)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        except:
+            # Fallback to current date if parsing fails
+            end_date = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+            start_date = (datetime.utcnow() - timedelta(days=180)).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        print(f"Fetching exercise histories from {start_date} to {end_date}")
+
+        for exercise in exercises:
+            exercise_id = exercise.get('exercise_template_id')
+            if exercise_id:
+                history = fetch_exercise_history(exercise_id, hevy_api_key, start_date, end_date)
+                if history:
+                    exercise_histories[exercise_id] = history
+
+        print(f"Fetched history for {len(exercise_histories)} exercises")
+
+        # Step 3: Format for analysis
+        workout_text = format_workout_for_analysis(workout_data, exercise_histories)
         print(f"Formatted workout: {len(workout_text)} characters")
 
-        # Step 3: Analyze with OpenAI
+        # Step 4: Analyze with OpenAI
         analysis = call_openai(workout_text, openai_api_key)
         print("Analysis complete")
 
-        # Step 4: Post to Slack if webhook configured
+        # Step 5: Post to Slack if webhook configured
         if slack_webhook_url:
             post_to_slack(slack_webhook_url, workout_text, analysis)
 
