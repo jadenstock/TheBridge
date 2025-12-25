@@ -94,7 +94,7 @@ OUTPUT FORMAT:
     url = "https://api.openai.com/v1/chat/completions"
 
     payload = {
-        "model": "gpt-4o",
+        "model": "gpt-5.1",
         "messages": [
             {
                 "role": "system",
