@@ -514,7 +514,10 @@ def fetch_and_format_all_sources() -> str:
 
 def handler(event, context):
     """
-    Lambda handler to fetch all data sources and return formatted markdown.
+    Fetch weather, snow, and road data from multiple sources and return markdown.
+
+    Event: not used (allows scheduled or on-demand invocation).
+    Returns: HTTP-style response with statusCode and markdown body for downstream analysis.
     """
     print(f"Starting data fetch at {datetime.utcnow().isoformat()}Z")
 

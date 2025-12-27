@@ -1,3 +1,9 @@
+"""
+Lambda health check that posts a heartbeat message to Slack.
+
+Typically triggered by a CloudWatch schedule to confirm the bridge is alive.
+"""
+
 import json
 import os
 import urllib.request
@@ -6,10 +12,12 @@ from datetime import datetime
 
 def handler(event, context):
     """
-    Lambda function that sends a message to Slack via incoming webhook.
+    Send a scheduled heartbeat message to Slack via incoming webhook.
+
+    Event: usually a CloudWatch scheduled trigger (payload ignored).
 
     Environment variables:
-        SLACK_WEBHOOK_URL: The Slack incoming webhook URL
+        SLACK_WEBHOOK_URL: Slack incoming webhook URL that receives the heartbeat
     """
     webhook_url = os.environ.get('SLACK_WEBHOOK_URL')
 

@@ -13,6 +13,12 @@ from datetime import datetime
 from typing import Dict, Any
 
 
+def load_prompt(filename: str) -> str:
+    prompt_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "prompts", filename))
+    with open(prompt_path, "r", encoding="utf-8") as prompt_file:
+        return prompt_file.read()
+
+
 def invoke_data_fetcher(data_fetcher_function_name: str) -> str:
     """
     Invoke the data fetcher Lambda and return the markdown forecast.
@@ -54,42 +60,7 @@ def call_openai(forecast_markdown: str, api_key: str) -> str:
         Analysis text from OpenAI
     """
 
-    system_prompt = """You are an expert Pacific Northwest skier analyzing weekday-only ski conditions at Crystal Mountain.
-
-INPUT:
-- Forecast and snow data for Crystal Mountain
-- Assume report is generated daily around 6 PM PST
-- The skier has a WEEKDAY-ONLY pass (Mon–Fri)
-
-TASK:
-Produce a concise weekday ski conditions report covering ALL upcoming weekdays within the 7-day forecast window.
-
-IMPORTANT: Include EVERY weekday (Mon-Fri) that appears in the forecast, starting from:
-- Today if it's a weekday and there's still skiing time left (after 6 PM report time)
-- Tomorrow if today is mostly over or a weekend
-- Include weekdays from the current week AND next week if they fall within the 7-day forecast
-
-For EACH weekday:
-- Include the FULL DATE (e.g. Wed 12/25 or 2025-12-25)
-- Provide a one-line ski-quality summary (what the day will ski like)
-- Assign a score from 0–10 based on:
-  recent snowfall (last 48h), snow quality (temps during + overnight low),
-  wind/lift reliability, visibility, and weekday crowd advantage
-- Add up to 4 relevant emojis (❄️ ☀️ ⚠️ 🔥 🚫)
-
-At the end:
-- Identify ONE "Best Weekday to Ski" if applicable
-- Include a short "Cycle Summary" (2–4 sentences max) describing the
-  overall weather pattern using technical ski-relevant language
-  (e.g. storm cycle, refresh window, consolidation, warmup, wind loading).
-- Be decisive and consistent across daily runs; this is a decision tool,
-  not a weather forecast.
-
-OUTPUT FORMAT:
-- Header
-- Bullet list per weekday (with dates)
-- Best Bet line
-- Cycle Summary"""
+    system_prompt = load_prompt("ski_analyzer_system.txt")
 
     url = "https://api.openai.com/v1/chat/completions"
 

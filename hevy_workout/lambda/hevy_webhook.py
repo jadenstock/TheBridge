@@ -1,3 +1,10 @@
+"""
+Webhook receiver for Hevy workout events that forwards processing to the analyzer.
+
+Validates an Authorization header, extracts the workoutId from the payload,
+and invokes the analyzer Lambda asynchronously.
+"""
+
 import json
 import os
 import boto3
@@ -7,8 +14,15 @@ lambda_client = boto3.client('lambda')
 
 def handler(event, context):
     """
-    Webhook receiver for Hevy workout events.
-    Validates auth header, triggers async processing, returns 200 quickly.
+    Handle Hevy webhook events and trigger the workout analyzer.
+
+    Event:
+    - headers.authorization: shared secret for validation
+    - body.payload.workoutId: ID of the workout to analyze
+
+    Environment variables:
+    - HEVY_WEBHOOK_AUTH: expected Authorization header value
+    - ANALYZER_FUNCTION_NAME: Lambda name to invoke for analysis
     """
 
     # Get configuration

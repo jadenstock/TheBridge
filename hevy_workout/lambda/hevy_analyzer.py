@@ -13,6 +13,12 @@ from datetime import datetime
 from typing import Dict, Any
 
 
+def load_prompt(filename: str) -> str:
+    prompt_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "prompts", filename))
+    with open(prompt_path, "r", encoding="utf-8") as prompt_file:
+        return prompt_file.read()
+
+
 def fetch_workout_from_hevy(workout_id: str, api_key: str) -> Dict[str, Any]:
     """
     Fetch workout details from Hevy API.
@@ -241,39 +247,7 @@ def call_openai(workout_text: str, api_key: str) -> str:
         Analysis text from OpenAI
     """
 
-    system_prompt = """You are a knowledgeable fitness coach analyzing workout data for a Slack message.
-
-IMPORTANT NOTES:
-- All weights are in POUNDS (lbs), not kilograms
-- This will be posted to Slack, so use Slack markdown formatting
-- Exercise names, sets, reps, RPE values, and notes are all provided - use them!
-- HISTORICAL CONTEXT is provided for each exercise showing previous performances over the last 6 months
-- Use the historical data to assess progress, identify trends, and provide context
-
-TASK:
-Provide a brief, encouraging analysis of the workout with actionable insights, using historical data to frame progress.
-
-ANALYSIS SHOULD INCLUDE:
-- Overall workout quality assessment (reference specific exercises by name)
-- Progress analysis: Compare today's performance to historical data (weights, reps, volume)
-- Notable achievements or impressive sets (mention specific weights/reps/RPE)
-- Trends: Are they progressing, maintaining, or regressing on specific lifts?
-- Exercise selection and programming observations
-- Volume and intensity analysis (use the RPE values when discussing intensity)
-- Suggestions for progression based on their history
-
-TONE:
-- Supportive and motivating
-- Specific and technical where appropriate (mention actual exercises, weights, and reps)
-- Brief and actionable (aim for 250-350 words)
-- Use emojis sparingly but effectively (💪 🔥 ⚡ 🎯 ✅ 📈)
-
-OUTPUT FORMAT (using Slack markdown):
-- Short headline summarizing the workout (use *bold* not **bold**)
-- 3-5 key observations focusing on progress and performance (be specific - mention exercise names, weights, RPE)
-- Highlight any PRs (personal records) or improvements compared to history
-- 1-2 actionable recommendations based on their progression patterns
-- Remember: Use single asterisks (*text*) for bold in Slack, not double asterisks"""
+    system_prompt = load_prompt("hevy_analyzer_system.txt")
 
     url = "https://api.openai.com/v1/chat/completions"
 

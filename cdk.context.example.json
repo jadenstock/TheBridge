@@ -1,5 +1,11 @@
 {
   "slack_webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
   "ski_forecast_webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
-  "openai_api_key": "sk-YOUR-OPENAI-API-KEY"
+  "openai_api_key": "sk-YOUR-OPENAI-API-KEY",
+  "hevy_api_key": "your-hevy-api-key-here",
+  "hevy_webhook_auth": "your-secret-token-for-hevy-webhook",
+  "hevy_slack_webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
+  "gym_openai_api_key": "sk-YOUR-OPENAI-API-KEY",
+  "slack_signing_secret": "your-slack-app-signing-secret",
+  "fitness_slack_bot_token": "xoxb-your-slack-bot-token"
 }
