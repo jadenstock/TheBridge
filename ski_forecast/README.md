@@ -8,7 +8,7 @@ This system fetches weather and snow data from multiple sources, analyzes it usi
 
 ## Features
 
-- **Multi-Source Data**: Fetches from 5 reliable sources (NWS/NOAA, Snow-Forecast.com, OnTheSnow, NWAC, WSDOT)
+- **Multi-Source Data**: Fetches from 8 sources (NWS point forecast, NWS AFD, Mount Rainier REC, NWAC forecast, NWAC weather station, Snow-Forecast.com, OnTheSnow, WSDOT)
 - **AI Analysis**: Uses OpenAI (GPT-4o) with expert Pacific Northwest ski knowledge
 - **Weekday Focus**: Only analyzes Mon-Fri (ignores weekends for weekday pass holders)
 - **Daily Reports**: Automated Slack notifications at 6 PM PST
@@ -36,11 +36,14 @@ This system fetches weather and snow data from multiple sources, analyzes it usi
 
 | Source | Type | Data Provided |
 |--------|------|---------------|
-| NWS/NOAA | API (JSON) | 7-day forecast, temps, wind, precipitation, snow accumulation |
-| Snow-Forecast.com | HTML | Elevation-based forecasts, snow totals |
-| OnTheSnow | HTML | Hourly/daily forecasts, 72-hour snow totals |
-| NWAC | HTML | Avalanche forecasts, mountain weather |
-| WSDOT | HTML | SR 410 road conditions, chain requirements |
+| NWS/NOAA Point Forecast | API (JSON) | 7-day forecast, temps, wind, precipitation |
+| NWS Seattle AFD | Text | Technical discussion: snow levels, timing, confidence |
+| Mount Rainier REC Forecast | Text | Recreation forecast used for Crystal snowfall proxy |
+| NWAC Mountain Weather Forecast | HTML | Mountain-specific forecast, storm timing |
+| NWAC Weather Station (Crystal) | HTML | Real-time observations (temp, wind, snowfall) |
+| Snow-Forecast.com | HTML | Elevation-based 6-day forecast and snow totals |
+| OnTheSnow | HTML | Resort weather/precip overview |
+| WSDOT (Crystal to Greenwater) | HTML | SR 410 road conditions and chain requirements |
 
 ## Configuration
 
@@ -110,7 +113,7 @@ ski_forecast/
 
 1. **EventBridge** triggers SkiAnalyzerFunction at 6 PM PST daily
 2. **SkiAnalyzerFunction** invokes DataFetcherFunction
-3. **DataFetcherFunction** fetches data from all 5 sources
+3. **DataFetcherFunction** fetches data from all 8 sources
 4. Data is returned as formatted markdown
 5. **SkiAnalyzerFunction** sends markdown to OpenAI with expert prompt
 6. OpenAI analyzes and scores each upcoming weekday
