@@ -60,6 +60,11 @@ The AI will analyze your recent upper body workouts, check which muscles need re
   - **Add bot to channel:** either mention it (e.g., `@Fitness Assistant`) and Slack will prompt to add, or Channel details → Integrations → Add apps. The bot must be in the channel to receive `message.channels` events.
   - After installing and adding, replies in the bot’s thread will trigger the planner to respond in-thread.
 
+#### Weekly training review (scheduled)
+- A scheduled Lambda (`WeeklyReviewFunction`) runs every Friday at 8:00 PM PT (EventBridge cron with `time_zone="America/Los_Angeles"`).
+- It fetches the past 7 days of Hevy workouts, summarizes wins/gaps, and posts a Slack message titled “Weekly Training Review.”
+- Uses the same Hevy/OpenAI/Slack webhook environment variables as the other fitness Lambdas.
+
 ## Architecture
 
 The system uses a two-Lambda architecture:

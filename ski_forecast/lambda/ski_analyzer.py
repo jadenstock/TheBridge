@@ -77,7 +77,8 @@ def call_openai(forecast_markdown: str, api_key: str) -> str:
             }
         ],
         "temperature": 0.7,
-        "max_tokens": 2000
+        # gpt-5.1 expects max_completion_tokens instead of deprecated max_tokens
+        "max_completion_tokens": 2000
     }
 
     headers = {

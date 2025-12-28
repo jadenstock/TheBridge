@@ -7,6 +7,8 @@ from aws_cdk import (
     aws_apigatewayv2 as apigwv2,
     aws_apigatewayv2_integrations as apigwv2_integrations,
     aws_dynamodb as dynamodb,
+    aws_events as events,
+    aws_events_targets as targets,
 )
 from constructs import Construct
 
@@ -39,6 +41,22 @@ class HevyWorkoutStack(Stack):
             },
         )
 
+        # Lambda function for weekly training review
+        weekly_review_lambda = lambda_.Function(
+            self,
+            "WeeklyReviewFunction",
+            runtime=lambda_.Runtime.PYTHON_3_11,
+            handler="weekly_review.handler",
+            code=lambda_.Code.from_asset("hevy_workout/lambda"),
+            timeout=Duration.seconds(120),
+            description="Creates a weekly training review using Hevy data and posts to Slack",
+            environment={
+                "HEVY_API_KEY": hevy_api_key,
+                "OPENAI_API_KEY": openai_api_key,
+                "SLACK_WEBHOOK_URL": hevy_slack_webhook_url,
+            },
+        )
+
         # Lambda function to receive webhooks from Hevy
         hevy_webhook_lambda = lambda_.Function(
             self,
@@ -56,6 +74,20 @@ class HevyWorkoutStack(Stack):
 
         # Grant webhook function permission to invoke analyzer
         hevy_analyzer_lambda.grant_invoke(hevy_webhook_lambda)
+        # Grant permissions to weekly review (none needed beyond outbound calls)
+
+        # Weekly EventBridge schedule (Friday 8pm PT)
+        events.Rule(
+            self,
+            "WeeklyReviewSchedule",
+            description="Runs the weekly training review every Friday at 8pm PT",
+            schedule=events.Schedule.cron(
+                minute="0",
+                hour="20",
+                week_day="FRI",
+            ),
+            targets=[targets.LambdaFunction(weekly_review_lambda)],
+        )
 
         # Create HTTP API Gateway
         http_api = apigwv2.HttpApi(
