@@ -20,12 +20,12 @@ class SkiForecastStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         # Get OpenAI API key from context
-        openai_api_key = self.node.try_get_context("openai_api_key")
+        openai_api_key = self.node.try_get_context("ski_openai_api_key")
 
         if not openai_api_key:
-            print("⚠️  Warning: openai_api_key not provided in context")
+            print("⚠️  Warning: ski_openai_api_key not provided in context")
             print("   You can provide it during deployment:")
-            print("   cdk deploy -c openai_api_key=sk-...")
+            print("   cdk deploy -c ski_openai_api_key=sk-...")
             openai_api_key = "NOT_CONFIGURED"
 
         # Get Slack webhook URL for ski forecast

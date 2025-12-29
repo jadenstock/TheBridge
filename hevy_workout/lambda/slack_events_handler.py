@@ -8,9 +8,11 @@ and triggers the workout planning agent to respond.
 import json
 import os
 import boto3
+from datetime import datetime, timedelta
 
 # Initialize Lambda client for invoking planning agent
 lambda_client = boto3.client('lambda')
+dynamodb = boto3.resource('dynamodb')
 
 
 def handler(event, context):
@@ -85,28 +87,64 @@ def handler(event, context):
                     print("Empty message, ignoring")
                     return {'statusCode': 200, 'body': json.dumps({'ok': True})}
 
-                # Get planning agent function name
                 planning_agent_function = os.environ.get('PLANNING_AGENT_FUNCTION_NAME')
-                if not planning_agent_function:
-                    print("Error: PLANNING_AGENT_FUNCTION_NAME not configured")
+                weekly_goals_function = os.environ.get('WEEKLY_GOALS_FUNCTION_NAME')
+                daily_planner_function = os.environ.get('DAILY_PLANNER_FUNCTION_NAME')
+                conversation_table = os.environ.get('CONVERSATION_TABLE_NAME')
+
+                target_function = planning_agent_function
+
+                # Look up agent by thread (if present)
+                if conversation_table and thread_ts:
+                    table = dynamodb.Table(conversation_table)
+                    resp = table.query(
+                        KeyConditionExpression='thread_id = :thread',
+                        ExpressionAttributeValues={':thread': thread_ts},
+                        ScanIndexForward=False,
+                        Limit=1,
+                    )
+                    items = resp.get('Items', [])
+                    if items:
+                        agent = items[0].get('agent')
+                        if agent == 'weekly_goals' and weekly_goals_function:
+                            target_function = weekly_goals_function
+                        elif agent == 'daily_planner' and daily_planner_function:
+                            target_function = daily_planner_function
+
+                if not target_function:
+                    print("Error: no target function configured")
                     return {'statusCode': 500, 'body': json.dumps({'ok': False})}
 
-                # Prepare payload for planning agent
-                # We'll use a special response mechanism for thread replies
                 agent_payload = {
                     'user_id': user_id,
-                    'user_name': 'user',  # Events API doesn't include username
+                    'user_name': 'user',
                     'channel_id': channel_id,
-                    'thread_ts': thread_ts,  # This is the parent message timestamp
+                    'thread_ts': thread_ts,
                     'user_message': text,
-                    'response_url': None,  # We'll post directly using chat.postMessage
+                    'response_url': None,
                     'is_thread_reply': True
                 }
 
+                # Record user message for routing/history
+                if conversation_table:
+                    table = dynamodb.Table(conversation_table)
+                    ttl = int((datetime.utcnow() + timedelta(days=14)).timestamp())
+                    table.put_item(
+                        Item={
+                            'thread_id': thread_ts,
+                            'timestamp': datetime.utcnow().isoformat() + 'Z',
+                            'user_id': user_id,
+                            'role': 'user',
+                            'message_text': text,
+                            'agent': 'weekly_goals' if target_function == weekly_goals_function else 'planner',
+                            'expires_at': ttl,
+                        }
+                    )
+
                 # Invoke planning agent asynchronously
-                print(f"Invoking planning agent: {planning_agent_function}")
+                print(f"Invoking agent: {target_function}")
                 lambda_client.invoke(
-                    FunctionName=planning_agent_function,
+                    FunctionName=target_function,
                     InvocationType='Event',  # Async invocation
                     Payload=json.dumps(agent_payload)
                 )

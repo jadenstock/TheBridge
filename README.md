@@ -24,54 +24,24 @@ The forecaster aggregates data from:
 7. **OnTheSnow** - Resort weather conditions
 8. **WSDOT Road Conditions** - SR 410 road status and chain requirements
 
-### Hevy Workout Analyzer & Fitness Planning Agent
+### Fitness Coaching System (Slack-first, proactive)
 
-**Bidirectional fitness coaching system** that both analyzes completed workouts and helps plan future ones:
+Current agents (all Slack-threaded, S3 + Dynamo backed, using Hevy read tools):
+- **Weekly Goals Agent** (Sun noon PT): reads latest coach doc + past week of workouts + frequency, proposes 1–3 weekly themes, refines in thread, writes weekly goal doc to S3 on “lock it in.”
+- **Daily Planner** (Mon/Wed/Fri noon PT): reads weekly goal doc + recent workouts (last ~9 days) + frequency, proposes today’s 1–3 workout options; refines mid-thread for pivots (soreness/equipment).
+- **Weekly Review** (Sat noon PT): pulls latest weekly goal doc + last week’s workouts, frames review relative to the goals, posts to Slack.
+- **Coach Doc Refresher** (biweekly Sun noon PT): small, incremental edits to coach doc based on last 14 days; writes new coach doc to S3 and posts a change summary to Slack.
 
-#### 1. Workout Analysis (Hevy → Slack)
-- **Receives webhooks** from Hevy when workouts complete
-- **Fetches workout details** including sets, reps, weights, RPE
-- **Fetches exercise history** to compare performance over time
-- **Analyzes with OpenAI** to provide insights, progress tracking, and recommendations
-- **Posts to Slack** with personalized workout analysis
+Shared tools: Hevy workouts (formatted in lbs), exercise frequency, exercise trends, latest coach doc, latest weekly goal doc, S3 writers for coach/weekly goals.
 
-#### 2. Workout Planning (Slack → AI Agent → Hevy API)
-- **Slash command `/plan`** in Slack for interactive workout planning
-- **Conversational AI** powered by OpenAI with thread-based conversation history
-- **Pulls recent workouts** from Hevy API (last 3 weeks) to inform recommendations
-- **Considers recovery** - avoids exercises hitting recently-trained muscles (2-3 days)
-- **Promotes diversity** - suggests variety based on last week's workouts
-- **Equipment-aware** - recommendations based on your gym's available equipment
-- **Thread-based conversations** with 7-day history stored in DynamoDB
+Routing: Slack events handler tags threads in Dynamo with the originating agent (`weekly_goals`, `daily_planner`, `planner`, `coach_doc_refresher`) and routes replies accordingly.
 
-**Example usage:**
-```
-/plan I'm planning upper body today. Besides seated cable rows, what would you recommend?
-```
-
-The AI will analyze your recent upper body workouts, check which muscles need recovery, and suggest exercises for balanced development using your gym's equipment.
-
-#### Interactive thread replies (Slack back-and-forth)
-- Slash commands cannot run inside threads (Slack limitation), so `/plan` must be sent as a top-level message; the bot echoes your text to the channel and replies in a thread.
-- For ongoing back-and-forth, the Slack Events API handles thread replies:
-  - **Request URL:** `https://<api-gateway-url>/slack/events` (from stack output `ApiGatewayUrl` + `/slack/events`). Save to trigger URL verification; you should see `url_verification` in CloudWatch.
-  - **Events:** subscribe to `message.channels` (and `message.groups` if using private channels). Optionally add `app_mention` if you want mention triggers.
-  - **Scopes:** `chat:write`, `channels:read`, `channels:history` (plus `groups:read`/`groups:history` if you use private channels). Add `app_mentions:read` if you subscribe to mentions. Reinstall the app after scope changes.
-  - **Add bot to channel:** either mention it (e.g., `@Fitness Assistant`) and Slack will prompt to add, or Channel details → Integrations → Add apps. The bot must be in the channel to receive `message.channels` events.
-  - After installing and adding, replies in the bot’s thread will trigger the planner to respond in-thread.
-
-#### Weekly training review (scheduled)
-- A scheduled Lambda (`WeeklyReviewFunction`) runs every Friday at 8:00 PM PT (EventBridge cron with `time_zone="America/Los_Angeles"`).
-- It fetches the past 7 days of Hevy workouts, summarizes wins/gaps, and posts a Slack message titled “Weekly Training Review.”
-- Uses the same Hevy/OpenAI/Slack webhook environment variables as the other fitness Lambdas.
+Legacy:
+- `/plan` slash command and its planner Lambda remain for now but are considered legacy; TODO: remove after confirming the new proactive agents cover all needs.
 
 ## Architecture
 
-The system uses a two-Lambda architecture:
-- **Data Fetcher Lambda**: Fetches and formats weather data from multiple sources
-- **Analyzer Lambda**: Uses OpenAI to analyze data and generate ski recommendations
-- **EventBridge Rule**: Cron trigger that runs daily
-- **Slack Integration**: Posts formatted reports to Slack via webhooks
+Fitness system uses scheduled Lambdas (weekly goals, daily planner, weekly review, coach-doc refresher), Slack Events/API Gateway for threads and slash command (legacy), S3 for docs, DynamoDB for thread history/routing, and Hevy read APIs for data.
 
 ## Prerequisites
 
@@ -187,20 +157,24 @@ Edit `cdk.context.json` and add your configuration:
 ```json
 {
   "slack_webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
+  "ski_forecast_webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
+  "ski_openai_api_key": "your-ski-openai-api-key",
   "hevy_api_key": "your-hevy-api-key",
   "hevy_webhook_auth": "your-secret-auth-token-for-hevy-webhook",
   "hevy_slack_webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
-  "gym_openai_api_key": "your-openai-api-key",
+  "gym_openai_api_key": "your-gym-openai-api-key",
   "slack_signing_secret": "your-slack-app-signing-secret"
 }
 ```
 
 **Configuration values:**
-- `slack_webhook_url`: Slack incoming webhook URL (from step 3a)
+- `slack_webhook_url`: Slack incoming webhook URL (legacy, for general notifications)
+- `ski_forecast_webhook_url`: Slack webhook for ski forecast posts
+- `ski_openai_api_key`: OpenAI API key for ski forecast agent (get from https://platform.openai.com/)
 - `hevy_api_key`: Your Hevy API key (get from https://api.hevyapp.com/docs/)
 - `hevy_webhook_auth`: A secret token you create for authenticating Hevy webhooks (e.g., generate with `openssl rand -hex 32`)
-- `hevy_slack_webhook_url`: Same as `slack_webhook_url` (for workout analysis posts)
-- `gym_openai_api_key`: Your OpenAI API key (get from https://platform.openai.com/)
+- `hevy_slack_webhook_url`: Slack webhook for workout analysis posts
+- `gym_openai_api_key`: OpenAI API key for fitness agents (get from https://platform.openai.com/)
 - `slack_signing_secret`: Your Slack app signing secret (from step 3b.12)
 
 **Note**: The `cdk.context.json` file is gitignored to keep your secrets private.
@@ -210,6 +184,8 @@ Alternatively, you can pass these during deployment:
 ```bash
 cdk deploy \
   -c slack_webhook_url=https://hooks.slack.com/... \
+  -c ski_forecast_webhook_url=https://hooks.slack.com/... \
+  -c ski_openai_api_key=sk-... \
   -c hevy_api_key=your-key \
   -c hevy_webhook_auth=your-secret \
   -c hevy_slack_webhook_url=https://hooks.slack.com/... \

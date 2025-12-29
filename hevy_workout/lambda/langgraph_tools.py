@@ -96,9 +96,65 @@ exercise_trend_tool = StructuredTool.from_function(
     description="Exercise-specific trend over the past N days: session-by-session volume, max set volume, max weight, est 1RM, duration/distance, and notes.",
 )
 
+# ---------- Tool 4: latest coach doc ----------
+
+
+def _tool_latest_coach_doc() -> str:
+    return hevy_tools.fetch_latest_coach_doc()
+
+
+coach_doc_tool = StructuredTool.from_function(
+    func=_tool_latest_coach_doc,
+    name="get_latest_coach_doc",
+    description="Fetch the most recent coach doc from S3 and return its contents.",
+)
+
+# ---------- Tool 5: latest weekly goals doc ----------
+
+
+def _tool_latest_weekly_goal_doc() -> str:
+    return hevy_tools.fetch_latest_weekly_goal_doc()
+
+
+weekly_goal_doc_tool = StructuredTool.from_function(
+    func=_tool_latest_weekly_goal_doc,
+    name="get_latest_weekly_goal_doc",
+    description="Fetch the most recent weekly goals doc from S3 and return its contents.",
+)
+
+
+# ---------- Tool 6: search exercise templates ----------
+class TemplateSearchParams(BaseModel):
+    query: str = Field(..., description="Case-insensitive substring to match exercise template titles.")
+    max_results: int = Field(
+        default=30,
+        description="Maximum number of matches to return.",
+        gt=1,
+        le=200,
+    )
+
+
+def _tool_search_exercise_templates(params: TemplateSearchParams) -> str:
+    api_key = _get_api_key()
+    return hevy_tools.search_exercise_templates(api_key=api_key, query=params.query, max_results=params.max_results)
+
+
+exercise_template_search_tool = StructuredTool.from_function(
+    func=_tool_search_exercise_templates,
+    name="search_exercise_templates",
+    description="Search Hevy exercise templates by title and return matching names + ids (useful for finding template IDs).",
+)
+
 
 def get_tools() -> List[StructuredTool]:
     """
     Convenience accessor for all Hevy tools.
     """
-    return [workouts_tool, exercise_frequency_tool, exercise_trend_tool]
+    return [
+        workouts_tool,
+        exercise_frequency_tool,
+        exercise_trend_tool,
+        coach_doc_tool,
+        weekly_goal_doc_tool,
+        exercise_template_search_tool,
+    ]

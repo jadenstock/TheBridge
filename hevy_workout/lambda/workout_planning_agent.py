@@ -61,7 +61,7 @@ def get_conversation_history(thread_ts: str, table_name: str) -> List[Dict[str, 
         return []
 
 
-def store_message(thread_ts: str, user_id: str, role: str, message_text: str, table_name: str):
+def store_message(thread_ts: str, user_id: str, role: str, message_text: str, table_name: str, agent: str = "planner"):
     """
     Store a message in DynamoDB with TTL.
 
@@ -85,6 +85,7 @@ def store_message(thread_ts: str, user_id: str, role: str, message_text: str, ta
                 'user_id': user_id,
                 'role': role,
                 'message_text': message_text,
+                'agent': agent,
                 'expires_at': ttl
             }
         )
@@ -475,8 +476,8 @@ def handler(event, context):
         print(f"Final thread_ts for storage: {final_thread_ts}")
 
         # Step 7: Store messages in conversation history with the actual thread_ts
-        store_message(final_thread_ts, user_id, 'user', user_message, conversation_table)
-        store_message(final_thread_ts, user_id, 'assistant', ai_response, conversation_table)
+        store_message(final_thread_ts, user_id, 'user', user_message, conversation_table, agent="planner")
+        store_message(final_thread_ts, user_id, 'assistant', ai_response, conversation_table, agent="planner")
 
         return {
             'statusCode': 200,

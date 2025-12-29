@@ -1,11 +1,15 @@
 {
   "slack_webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
   "ski_forecast_webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
-  "openai_api_key": "sk-YOUR-OPENAI-API-KEY",
+  "ski_openai_api_key": "sk-YOUR-OPENAI-API-KEY",
   "hevy_api_key": "your-hevy-api-key-here",
   "hevy_webhook_auth": "your-secret-token-for-hevy-webhook",
   "hevy_slack_webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
   "gym_openai_api_key": "sk-YOUR-OPENAI-API-KEY",
   "slack_signing_secret": "your-slack-app-signing-secret",
-  "fitness_slack_bot_token": "xoxb-your-slack-bot-token"
+  "fitness_slack_bot_token": "xoxb-your-slack-bot-token",
+  "coach_docs_bucket_name": "your-coach-docs-bucket-name",
+  "coach_docs_prefix": "coach_docs/",
+  "weekly_goals_prefix": "weekly_goals/",
+  "weekly_goals_channel": "C1234567890"
 }

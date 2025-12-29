@@ -7,7 +7,10 @@ from datetime import datetime, timedelta, timezone
 import json
 import urllib.request
 import urllib.error
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+import os
+
+import boto3
 
 
 def kg_to_lbs(kg: Optional[float]) -> Optional[float]:
@@ -291,6 +294,83 @@ def fetch_recent_exercise_frequency(api_key: str, days: int = 14) -> str:
     return fetch_exercise_frequency(api_key, start_date, end_date)
 
 
+def fetch_exercise_templates(
+    api_key: str,
+    search: Optional[str] = None,
+    page_size: int = 100,
+    max_pages: int = 10,
+) -> List[Dict[str, Any]]:
+    """
+    Fetch exercise templates with optional case-insensitive title filter.
+    """
+    templates: List[Dict[str, Any]] = []
+    page = 1
+    search_l = search.lower() if search else None
+
+    while page <= max_pages:
+        url = f"https://api.hevyapp.com/v1/exercise_templates?page={page}&pageSize={page_size}"
+        headers = {"accept": "application/json", "api-key": api_key}
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=15) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode("utf-8")
+            raise RuntimeError(f"Hevy API error {e.code}: {error_body}")
+        except urllib.error.URLError as e:
+            raise RuntimeError(f"Network error fetching exercise templates: {str(e)}")
+
+        page_templates = data.get("exercise_templates", [])
+        if search_l:
+            page_templates = [t for t in page_templates if search_l in t.get("title", "").lower()]
+        templates.extend(page_templates)
+
+        page_count = data.get("page_count", page)
+        if page >= page_count or not page_templates:
+            break
+        page += 1
+
+    return templates
+
+
+def format_exercise_templates(templates: List[Dict[str, Any]], search: Optional[str] = None, max_results: int = 50) -> str:
+    """
+    Render exercise templates as an LLM-friendly list.
+    """
+    if not templates:
+        if search:
+            return f"No exercise templates matched '{search}'."
+        return "No exercise templates returned."
+
+    header = f"Exercise templates (showing up to {max_results}"
+    header += f", filtered by '{search}')" if search else ")"
+    lines = [header + ":"]
+
+    for idx, t in enumerate(templates[:max_results], 1):
+        title = t.get("title", "Unknown")
+        tid = t.get("id") or t.get("exercise_template_id") or "unknown-id"
+        category = t.get("category") or t.get("exercise_category") or ""
+        equipment = t.get("equipment") or t.get("equipment_category") or ""
+        parts = [f"{idx}. {title} (id: {tid})"]
+        if category:
+            parts.append(f"category: {category}")
+        if equipment:
+            parts.append(f"equipment: {equipment}")
+        lines.append(" - ".join(parts))
+
+    if len(templates) > max_results:
+        lines.append(f"... and {len(templates) - max_results} more")
+    return "\n".join(lines)
+
+
+def search_exercise_templates(api_key: str, query: str, max_results: int = 50) -> str:
+    """
+    Convenience wrapper to search templates by title.
+    """
+    templates = fetch_exercise_templates(api_key, search=query, max_pages=10)
+    return format_exercise_templates(templates, search=query, max_results=max_results)
+
+
 def fetch_exercise_history_range(api_key: str, exercise_id: str, start_date: datetime, end_date: datetime) -> List[Dict[str, Any]]:
     """
     Fetch exercise history rows for a template within a date range.
@@ -509,3 +589,119 @@ def fetch_recent_exercise_trend(api_key: str, exercise_id: str, days: int = 90) 
     end_date = ensure_utc(datetime.utcnow())
     start_date = end_date - timedelta(days=days)
     return fetch_exercise_trend(api_key, exercise_id, start_date, end_date)
+
+
+# ------------------------ Coach Doc (S3) ------------------------
+
+
+def _coach_doc_s3_config() -> Tuple[str, str]:
+    bucket = os.environ.get("COACH_DOC_S3_BUCKET")
+    prefix = os.environ.get("COACH_DOC_S3_PREFIX", "coach_docs/")
+    if not bucket:
+        raise RuntimeError("COACH_DOC_S3_BUCKET is not set")
+    return bucket, prefix
+
+
+def _weekly_goals_s3_config() -> Tuple[str, str]:
+    bucket = os.environ.get("COACH_DOC_S3_BUCKET")
+    prefix = os.environ.get("WEEKLY_GOALS_S3_PREFIX", "weekly_goals/")
+    if not bucket:
+        raise RuntimeError("COACH_DOC_S3_BUCKET is not set")
+    return bucket, prefix
+
+
+def fetch_latest_coach_doc() -> str:
+    """
+    Fetch the most recent coach doc from S3 (by LastModified) under the configured prefix.
+    """
+    bucket, prefix = _coach_doc_s3_config()
+    s3 = boto3.client("s3")
+
+    latest = None
+    continuation = None
+    while True:
+        kwargs = {"Bucket": bucket, "Prefix": prefix, "MaxKeys": 1000}
+        if continuation:
+            kwargs["ContinuationToken"] = continuation
+        resp = s3.list_objects_v2(**kwargs)
+        contents = resp.get("Contents", [])
+        for obj in contents:
+            if obj.get("Key", "").endswith("/"):
+                continue
+            if latest is None or obj["LastModified"] > latest["LastModified"]:
+                latest = obj
+        if resp.get("IsTruncated"):
+            continuation = resp.get("NextContinuationToken")
+        else:
+            break
+
+    if not latest:
+        return f"No coach docs found in s3://{bucket}/{prefix}"
+
+    key = latest["Key"]
+    obj = s3.get_object(Bucket=bucket, Key=key)
+    body = obj["Body"].read().decode("utf-8")
+    last_modified = latest["LastModified"].astimezone(timezone.utc).isoformat()
+
+    return f"Latest coach doc: s3://{bucket}/{key} (LastModified {last_modified})\n\n{body}"
+
+
+def fetch_latest_weekly_goal_doc() -> str:
+    """
+    Fetch the most recent weekly goal doc from S3 under the configured weekly goals prefix.
+    """
+    bucket, prefix = _weekly_goals_s3_config()
+    s3 = boto3.client("s3")
+
+    latest = None
+    continuation = None
+    while True:
+        kwargs = {"Bucket": bucket, "Prefix": prefix, "MaxKeys": 1000}
+        if continuation:
+            kwargs["ContinuationToken"] = continuation
+        resp = s3.list_objects_v2(**kwargs)
+        contents = resp.get("Contents", [])
+        for obj in contents:
+            if obj.get("Key", "").endswith("/"):
+                continue
+            if latest is None or obj["LastModified"] > latest["LastModified"]:
+                latest = obj
+        if resp.get("IsTruncated"):
+            continuation = resp.get("NextContinuationToken")
+        else:
+            break
+
+    if not latest:
+        return f"No weekly goals found in s3://{bucket}/{prefix}"
+
+    key = latest["Key"]
+    obj = s3.get_object(Bucket=bucket, Key=key)
+    body = obj["Body"].read().decode("utf-8")
+    last_modified = latest["LastModified"].astimezone(timezone.utc).isoformat()
+
+    return f"Latest weekly goals: s3://{bucket}/{key} (LastModified {last_modified})\n\n{body}"
+
+
+def write_coach_doc(content: str) -> str:
+    """
+    Write a new coach doc version to S3 and return the key.
+    """
+    bucket, prefix = _coach_doc_s3_config()
+    date_str = datetime.utcnow().strftime("%Y-%m-%d")
+    key = f"{prefix.rstrip('/')}/{date_str}_coach_doc.txt"
+    s3 = boto3.client("s3")
+    s3.put_object(Bucket=bucket, Key=key, Body=content.encode("utf-8"))
+    return f"{bucket}/{key}"
+
+
+def write_weekly_goal_doc(content: str, title: str) -> str:
+    """
+    Write a weekly goal doc to S3 and return the key.
+    """
+    bucket, prefix = _weekly_goals_s3_config()
+    safe_title = "".join(c for c in title.replace(" ", "_") if c.isalnum() or c in "_-")
+    date_str = datetime.utcnow().strftime("%Y-%m-%d")
+    key = f"{prefix.rstrip('/')}/{date_str}_{safe_title}.txt"
+    s3 = boto3.client("s3")
+    s3.put_object(Bucket=bucket, Key=key, Body=content.encode("utf-8"))
+    return f"{bucket}/{key}"
