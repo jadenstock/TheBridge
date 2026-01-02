@@ -12,19 +12,24 @@ from importlib import import_module
 from datetime import datetime, timedelta
 from typing import Dict, Any
 
+from hevy_workout.config import get_agent_config, get_openai_api_url, load_prompt_text
+
 hevy_tools = import_module("hevy_tools")
 
-OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
-MODEL = "gpt-5.1"
+AGENT_CONFIG = get_agent_config("coach_doc_refresher")
+OPENAI_API_URL = get_openai_api_url()
+PROMPT_FILE = AGENT_CONFIG["prompt_file"]
+MODEL = AGENT_CONFIG["model"]
+TEMPERATURE = AGENT_CONFIG["temperature"]
+MAX_COMPLETION_TOKENS = AGENT_CONFIG["max_completion_tokens"]
 
 
 def load_system_prompt() -> str:
-    prompt_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "prompts", "coach_doc_refresher.txt"))
-    with open(prompt_path, "r", encoding="utf-8") as f:
-        return f.read()
+    """Load the coach doc refresher prompt configured in `config.json`."""
+    return load_prompt_text(__file__, PROMPT_FILE)
 
 
-def call_openai(system: str, user: str, api_key: str, max_tokens: int = 1500) -> str:
+def call_openai(system: str, user: str, api_key: str) -> str:
     import urllib.request
 
     payload = {
@@ -33,8 +38,8 @@ def call_openai(system: str, user: str, api_key: str, max_tokens: int = 1500) ->
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        "temperature": 0.4,
-        "max_completion_tokens": max_tokens,
+        "temperature": TEMPERATURE,
+        "max_completion_tokens": MAX_COMPLETION_TOKENS,
     }
     req = urllib.request.Request(
         OPENAI_API_URL,
@@ -96,7 +101,7 @@ def handler(event, context):
     )
 
     system_prompt = load_system_prompt()
-    updated_doc = call_openai(system_prompt, user_prompt, openai_key, max_tokens=1400)
+    updated_doc = call_openai(system_prompt, user_prompt, openai_key)
 
     # Persist updated doc
     key = hevy_tools.write_coach_doc(updated_doc)

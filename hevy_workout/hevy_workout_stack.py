@@ -237,16 +237,16 @@ class HevyWorkoutStack(Stack):
             handler="slack_command_handler.handler",
             code=lambda_.Code.from_asset("hevy_workout/lambda"),
             timeout=Duration.seconds(5),
-            description="Handles the /plan Slack slash command and triggers the workout planner",
+            description="Handles the /plan Slack slash command and triggers the daily planner",
             environment={
                 "SLACK_SIGNING_SECRET": slack_signing_secret or "NOT_CONFIGURED",
-                "PLANNING_AGENT_FUNCTION_NAME": workout_planning_lambda.function_name,
+                "DAILY_PLANNER_FUNCTION_NAME": daily_planner_lambda.function_name,
                 "SLACK_BOT_TOKEN": fitness_slack_bot_token or "NOT_CONFIGURED",
             },
         )
 
-        # Grant command handler permission to invoke planning agent
-        workout_planning_lambda.grant_invoke(slack_command_lambda)
+        # Grant command handler permission to invoke the daily planner
+        daily_planner_lambda.grant_invoke(slack_command_lambda)
 
         # Create Lambda integration for slash command
         slash_command_integration = apigwv2_integrations.HttpLambdaIntegration(

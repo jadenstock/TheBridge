@@ -17,10 +17,16 @@ from typing import List, Dict, Any
 
 from importlib import import_module
 
+from hevy_workout.config import get_agent_config, get_openai_api_url, load_prompt_text
+
 hevy_tools = import_module("hevy_tools")
 
-OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
-MODEL = "gpt-5.1"
+AGENT_CONFIG = get_agent_config("daily_planner")
+OPENAI_API_URL = get_openai_api_url()
+MODEL = AGENT_CONFIG["model"]
+TEMPERATURE = AGENT_CONFIG["temperature"]
+PROMPT_FILE = AGENT_CONFIG["prompt_file"]
+MAX_COMPLETION_TOKENS = AGENT_CONFIG["max_completion_tokens"]
 
 
 def utc_now() -> datetime:
@@ -28,9 +34,8 @@ def utc_now() -> datetime:
 
 
 def load_prompt() -> str:
-    prompt_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "prompts", "daily_planner_agent.txt"))
-    with open(prompt_path, "r", encoding="utf-8") as f:
-        return f.read()
+    """Load the system prompt configured for the daily planner."""
+    return load_prompt_text(__file__, PROMPT_FILE)
 
 
 def post_slack_message(token: str, channel: str, text: str, thread_ts: str = None) -> Dict[str, Any]:
@@ -56,14 +61,14 @@ def post_slack_message(token: str, channel: str, text: str, thread_ts: str = Non
         return data
 
 
-def call_openai(system: str, user: str, openai_key: str, max_tokens: int = 1200) -> str:
+def call_openai(system: str, user: str, openai_key: str) -> str:
     import urllib.request
 
     body = {
         "model": MODEL,
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        "temperature": 0.6,
-        "max_completion_tokens": max_tokens,
+        "temperature": TEMPERATURE,
+        "max_completion_tokens": MAX_COMPLETION_TOKENS,
     }
     req = urllib.request.Request(
         OPENAI_API_URL,
@@ -84,8 +89,9 @@ def handler(event, context):
     openai_key = os.environ["OPENAI_API_KEY"]
     hevy_api_key = os.environ["HEVY_API_KEY"]
     slack_token = os.environ.get("SLACK_BOT_TOKEN", "")
-    channel = os.environ.get("WEEKLY_GOALS_CHANNEL", "")
+    channel = event.get("channel_id") or os.environ.get("WEEKLY_GOALS_CHANNEL", "")
     table_name = os.environ.get("CONVERSATION_TABLE_NAME")
+    user_message = event.get("user_message")
 
     if not slack_token or not channel:
         return {"statusCode": 500, "body": "Slack not configured"}
@@ -95,7 +101,15 @@ def handler(event, context):
     if event.get("is_thread_reply"):
         return handle_thread(event, system_prompt, openai_key, hevy_api_key, slack_token, channel, table_name)
     else:
-        return handle_scheduled(system_prompt, openai_key, hevy_api_key, slack_token, channel, table_name)
+        return handle_scheduled(
+            system_prompt,
+            openai_key,
+            hevy_api_key,
+            slack_token,
+            channel,
+            table_name,
+            user_message=user_message,
+        )
 
 
 def build_context(hevy_api_key: str, days_workouts: int = 9, days_frequency: int = 30) -> str:
@@ -105,14 +119,24 @@ def build_context(hevy_api_key: str, days_workouts: int = 9, days_frequency: int
     return f"Weekly goals:\n{weekly_goal}\n\nRecent workouts (last {days_workouts}d):\n{workouts}\n\nExercise frequency (last {days_frequency}d):\n{freq}"
 
 
-def handle_scheduled(system_prompt, openai_key, hevy_api_key, slack_token, channel, table_name):
+def handle_scheduled(
+    system_prompt,
+    openai_key,
+    hevy_api_key,
+    slack_token,
+    channel,
+    table_name,
+    user_message: str | None = None,
+):
     context = build_context(hevy_api_key, days_workouts=9, days_frequency=30)
     user_prompt = (
         "Scheduled daily planner kickoff for today. Propose 1-3 workout options aligned to weekly goals, "
         "respecting last 2 days for recovery. Include main lifts/accessories and targets where clear. "
         "Keep concise for Slack.\n\nContext:\n" + context
     )
-    draft = call_openai(system_prompt, user_prompt, openai_key, max_tokens=900)
+    if user_message:
+        user_prompt += f"\n\nUser request: {user_message}"
+    draft = call_openai(system_prompt, user_prompt, openai_key)
     resp = post_slack_message(slack_token, channel, draft)
     thread_ts = resp.get("ts")
     if table_name and thread_ts:
@@ -135,7 +159,7 @@ def handle_thread(event, system_prompt, openai_key, hevy_api_key, slack_token, c
         f"Prior thread:\n{history_text}\n\nContext:\n{context}\n\n"
         "Adjust plan/targets respecting soreness/equipment notes. Keep concise."
     )
-    draft = call_openai(system_prompt, user_prompt, openai_key, max_tokens=900)
+    draft = call_openai(system_prompt, user_prompt, openai_key)
     resp = post_slack_message(slack_token, channel, draft, thread_ts=thread_ts)
     if table_name:
         store_message(table_name, thread_ts, "user", user_text, agent="daily_planner")

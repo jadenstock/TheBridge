@@ -113,7 +113,7 @@ def handler(event, context):
 
     Environment variables:
         SLACK_SIGNING_SECRET: Slack app signing secret for request verification
-        PLANNING_AGENT_FUNCTION_NAME: Name of the workout planning agent Lambda
+        DAILY_PLANNER_FUNCTION_NAME: Name of the daily workout planner Lambda
         SLACK_BOT_TOKEN: Bot token used to echo the user message to the channel
     """
 
@@ -185,15 +185,14 @@ def handler(event, context):
                 })
             }
 
-        # Get planning agent function name
-        planning_agent_function = os.environ.get('PLANNING_AGENT_FUNCTION_NAME')
-        if not planning_agent_function:
+        daily_planner_function = os.environ.get('DAILY_PLANNER_FUNCTION_NAME')
+        if not daily_planner_function:
             return {
                 'statusCode': 500,
                 'headers': {'Content-Type': 'application/json'},
                 'body': json.dumps({
                     'response_type': 'ephemeral',
-                    'text': 'Configuration error: Planning agent not configured'
+                    'text': 'Configuration error: Daily planner not configured'
                 })
             }
 
@@ -217,9 +216,9 @@ def handler(event, context):
         }
 
         # Invoke planning agent asynchronously
-        print(f"Invoking planning agent: {planning_agent_function}")
+        print(f"Invoking daily planner: {daily_planner_function}")
         lambda_client.invoke(
-            FunctionName=planning_agent_function,
+            FunctionName=daily_planner_function,
             InvocationType='Event',  # Async invocation
             Payload=json.dumps(agent_payload)
         )

@@ -12,11 +12,18 @@ import urllib.error
 from datetime import datetime
 from typing import Dict, Any
 
+from ski_forecast.config import get_agent_config, get_openai_api_url, load_prompt_text
 
-def load_prompt(filename: str) -> str:
-    prompt_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "prompts", filename))
-    with open(prompt_path, "r", encoding="utf-8") as prompt_file:
-        return prompt_file.read()
+AGENT_CONFIG = get_agent_config("ski_analyzer")
+OPENAI_API_URL = get_openai_api_url()
+PROMPT_FILE = AGENT_CONFIG["prompt_file"]
+MODEL = AGENT_CONFIG["model"]
+TEMPERATURE = AGENT_CONFIG["temperature"]
+MAX_COMPLETION_TOKENS = AGENT_CONFIG["max_completion_tokens"]
+
+
+def load_prompt() -> str:
+    return load_prompt_text(__file__, PROMPT_FILE)
 
 
 def invoke_data_fetcher(data_fetcher_function_name: str) -> str:
@@ -60,12 +67,12 @@ def call_openai(forecast_markdown: str, api_key: str) -> str:
         Analysis text from OpenAI
     """
 
-    system_prompt = load_prompt("ski_analyzer_system.txt")
+    system_prompt = load_prompt()
 
-    url = "https://api.openai.com/v1/chat/completions"
+    url = OPENAI_API_URL
 
     payload = {
-        "model": "gpt-5.1",
+        "model": MODEL,
         "messages": [
             {
                 "role": "system",
@@ -76,9 +83,9 @@ def call_openai(forecast_markdown: str, api_key: str) -> str:
                 "content": f"Here is the forecast data for Crystal Mountain:\n\n{forecast_markdown}"
             }
         ],
-        "temperature": 0.7,
+        "temperature": TEMPERATURE,
         # gpt-5.1 expects max_completion_tokens instead of deprecated max_tokens
-        "max_completion_tokens": 2000
+        "max_completion_tokens": MAX_COMPLETION_TOKENS
     }
 
     headers = {

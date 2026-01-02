@@ -14,14 +14,22 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Dict, Any, List
 
+from hevy_workout.config import get_agent_config, get_openai_api_url, load_prompt_text
+
 # Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')
 
+AGENT_CONFIG = get_agent_config("workout_planning")
+OPENAI_API_URL = get_openai_api_url()
+PROMPT_FILE = AGENT_CONFIG["prompt_file"]
+MODEL = AGENT_CONFIG["model"]
+TEMPERATURE = AGENT_CONFIG["temperature"]
+MAX_COMPLETION_TOKENS = AGENT_CONFIG["max_completion_tokens"]
 
-def load_prompt(filename: str) -> str:
-    prompt_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "prompts", filename))
-    with open(prompt_path, "r", encoding="utf-8") as prompt_file:
-        return prompt_file.read()
+
+def load_prompt() -> str:
+    """Load the workout planning system prompt specified in `config.json`."""
+    return load_prompt_text(__file__, PROMPT_FILE)
 
 
 def get_conversation_history(thread_ts: str, table_name: str) -> List[Dict[str, str]]:
@@ -240,7 +248,7 @@ def call_openai_for_planning(
         AI-generated workout plan/advice
     """
 
-    system_prompt = load_prompt("workout_planning_system.txt")
+    system_prompt = load_prompt()
 
     # Build conversation context
     messages = [{'role': 'system', 'content': system_prompt}]
@@ -262,13 +270,13 @@ def call_openai_for_planning(
     })
 
     # Call OpenAI
-    url = "https://api.openai.com/v1/chat/completions"
+    url = OPENAI_API_URL
 
     payload = {
-        "model": "gpt-5.1",
+        "model": MODEL,
         "messages": messages,
-        "temperature": 0.7,
-        "max_completion_tokens": 2000
+        "temperature": TEMPERATURE,
+        "max_completion_tokens": MAX_COMPLETION_TOKENS
     }
 
     headers = {

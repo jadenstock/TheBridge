@@ -14,10 +14,16 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 import traceback
 
+from hevy_workout.config import get_agent_config, get_openai_api_url, load_prompt_text
+
 hevy_tools = import_module("hevy_tools")
 
-OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
-MODEL = "gpt-5.1"
+AGENT_CONFIG = get_agent_config("weekly_goals")
+OPENAI_API_URL = get_openai_api_url()
+PROMPT_FILE = AGENT_CONFIG["prompt_file"]
+MODEL = AGENT_CONFIG["model"]
+TEMPERATURE = AGENT_CONFIG["temperature"]
+MAX_COMPLETION_TOKENS = AGENT_CONFIG["max_completion_tokens"]
 
 dynamodb = boto3.resource("dynamodb")
 s3_client = boto3.client("s3")
@@ -30,9 +36,8 @@ def utc_now() -> datetime:
 
 
 def load_prompt() -> str:
-    prompt_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "prompts", "weekly_goals_agent.txt"))
-    with open(prompt_path, "r", encoding="utf-8") as f:
-        return f.read()
+    """Load the weekly goals system prompt configured in `config.json`."""
+    return load_prompt_text(__file__, PROMPT_FILE)
 
 
 def post_slack_message(token: str, channel: str, text: str, thread_ts: str = None) -> Dict[str, Any]:
@@ -61,7 +66,7 @@ def post_slack_message(token: str, channel: str, text: str, thread_ts: str = Non
         return data
 
 
-def call_openai(system: str, user: str, openai_key: str, max_tokens: int = 1200) -> str:
+def call_openai(system: str, user: str, openai_key: str) -> str:
     import urllib.request
 
     body = {
@@ -70,8 +75,8 @@ def call_openai(system: str, user: str, openai_key: str, max_tokens: int = 1200)
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        "temperature": 0.6,
-        "max_completion_tokens": max_tokens,
+        "temperature": TEMPERATURE,
+        "max_completion_tokens": MAX_COMPLETION_TOKENS,
     }
     req = urllib.request.Request(
         OPENAI_API_URL,
@@ -160,7 +165,7 @@ def build_data_pack(hevy_api_key: str, days_workouts: int = 7, days_frequency: i
 def handle_scheduled_kickoff(system_prompt: str, openai_key: str, hevy_api_key: str, slack_token: str, channel: str, table_name: str):
     data_pack = build_data_pack(hevy_api_key, days_workouts=7, days_frequency=30)
     user_prompt = f"PHASE 1 kickoff. Generate 1-3 weekly goal options for the coming week.\n\nContext:\n{data_pack}"
-    draft = call_openai(system_prompt, user_prompt, openai_key, max_tokens=1400)
+    draft = call_openai(system_prompt, user_prompt, openai_key)
     if not draft or not draft.strip():
         print("Empty OpenAI response on kickoff; logging context for debugging.")
         draft = "Weekly goals agent did not get a usable response. Please rerun or check logs."
@@ -197,7 +202,7 @@ def handle_thread_reply(event, system_prompt: str, openai_key: str, hevy_api_key
         f"Instruction: {action}. If locking, provide a final weekly goal doc (title + body) concisely."
     )
 
-    draft = call_openai(system_prompt, user_prompt, openai_key, max_tokens=1400)
+    draft = call_openai(system_prompt, user_prompt, openai_key)
     if not draft or not draft.strip():
         print("Empty OpenAI response on refinement; logging context for debugging.")
         draft = "Weekly goals agent did not get a usable response. Please rerun or check logs."
