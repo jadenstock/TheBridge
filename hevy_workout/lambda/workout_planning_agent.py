@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Dict, Any, List
 
-from hevy_workout.config import get_agent_config, get_openai_api_url, load_prompt_text
+from config import get_agent_config, get_openai_api_url, load_prompt_text
 
 # Initialize AWS clients
 dynamodb = boto3.resource('dynamodb')

@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 import traceback
 
-from hevy_workout.config import get_agent_config, get_openai_api_url, load_prompt_text
+from config import get_agent_config, get_openai_api_url, load_prompt_text
 
 hevy_tools = import_module("hevy_tools")
 

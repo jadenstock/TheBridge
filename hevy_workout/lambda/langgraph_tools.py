@@ -9,7 +9,7 @@ from typing import Optional, List
 from langchain.tools import StructuredTool
 from pydantic import BaseModel, Field
 
-from hevy_workout.lambda import hevy_tools
+import hevy_tools
 
 
 def _get_api_key() -> str:

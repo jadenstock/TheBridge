@@ -249,6 +249,94 @@ HevyWorkoutStack.HevyWebhookApiEndpoint = https://abc123.execute-api.us-east-1.a
 4. Set authorization header to the value of `hevy_webhook_auth` from your `cdk.context.json`
 5. Save the webhook configuration
 
+---
+
+## ⚠️ Slack Configuration Maintenance
+
+### What Needs to Be Configured on api.slack.com
+
+The following configurations on https://api.slack.com/apps **must match** your deployed AWS infrastructure:
+
+1. **Slash Command Request URL** (`/plan` command)
+   - Location: Your App → Slash Commands → `/plan` → Request URL
+   - Must be: `https://[API-GATEWAY-ID].execute-api.us-east-1.amazonaws.com/slack/command`
+
+2. **Events Request URL** (for thread replies)
+   - Location: Your App → Event Subscriptions → Request URL
+   - Must be: `https://[API-GATEWAY-ID].execute-api.us-east-1.amazonaws.com/slack/events`
+
+### When These Configurations Become Outdated
+
+Your Slack app URLs will need to be updated whenever:
+
+1. **You destroy and recreate the CDK stack** (`cdk destroy` + `cdk deploy`)
+   - This creates a new API Gateway with a new ID
+   - Old: `https://x35bnvwxd9.execute-api...`
+   - New: `https://ojohhlvdq4.execute-api...`
+
+2. **You change the API Gateway configuration** in `hevy_workout_stack.py`
+   - Modifying the `HttpApi` construct may trigger recreation
+
+3. **You deploy to a different AWS region**
+   - The URL will change to reflect the new region
+
+### How to Check If URLs Are Outdated
+
+#### Symptoms:
+- `/plan` command returns `dispatch_unknown_error` or times out
+- Slack thread replies don't trigger agent responses
+- No logs appear in CloudWatch when using Slack commands
+
+#### Verification:
+```bash
+# Get your current API Gateway URL from AWS
+aws cloudformation describe-stacks \
+  --stack-name HevyWorkoutStack \
+  --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayUrl`].OutputValue' \
+  --output text
+
+# Compare this with your Slack slash command URL at:
+# https://api.slack.com/apps → Your App → Slash Commands → /plan
+```
+
+#### Quick Check:
+After any CDK deployment, the outputs show your current URL:
+```
+Outputs:
+HevyWorkoutStack.ApiGatewayUrl = https://[CURRENT-ID].execute-api.us-east-1.amazonaws.com/
+```
+
+If the ID in this URL doesn't match what's configured in Slack, update Slack immediately.
+
+### How to Update (Quick Reference)
+
+1. Get the current URL:
+   ```bash
+   cdk deploy  # Look for "Outputs:" section
+   ```
+
+2. Update Slack:
+   - Go to https://api.slack.com/apps
+   - Select your **Fitness Planner** app
+   - **Slash Commands** → `/plan` → Update Request URL → Save
+   - **Event Subscriptions** → Update Request URL → Save
+
+3. Test:
+   ```bash
+   # In Slack:
+   /plan test message
+
+   # Watch logs to confirm it's working:
+   aws logs tail /aws/lambda/HevyWorkoutStack-SlackCommandFunction* --follow
+   ```
+
+### Pro Tip: Prevent URL Changes
+
+To avoid updating Slack URLs frequently:
+- **Don't** run `cdk destroy` unless necessary (use `cdk deploy` for updates)
+- Use `cdk deploy` for code changes - it preserves the API Gateway if possible
+- Consider using a custom domain name for API Gateway (advanced)
+
 ### View Deployed Resources
 
 ```bash

@@ -17,7 +17,7 @@ from typing import List, Dict, Any
 
 from importlib import import_module
 
-from hevy_workout.config import get_agent_config, get_openai_api_url, load_prompt_text
+from config import get_agent_config, get_openai_api_url, load_prompt_text
 
 hevy_tools = import_module("hevy_tools")
 
@@ -84,14 +84,22 @@ def call_openai(system: str, user: str, openai_key: str) -> str:
         return data["choices"][0]["message"]["content"]
 
 
+def log_draft_length(draft: str, context_label: str) -> None:
+    """Record the character count of the OpenAI draft to aid debugging."""
+    length = len(draft) if draft else 0
+    print(f"[daily_planner] {context_label} draft length: {length} chars")
+
+
 def handler(event, context):
-    print("Event:", json.dumps(event))
     openai_key = os.environ["OPENAI_API_KEY"]
     hevy_api_key = os.environ["HEVY_API_KEY"]
     slack_token = os.environ.get("SLACK_BOT_TOKEN", "")
     channel = event.get("channel_id") or os.environ.get("WEEKLY_GOALS_CHANNEL", "")
     table_name = os.environ.get("CONVERSATION_TABLE_NAME")
     user_message = event.get("user_message")
+
+    event_type = "thread_reply" if event.get("is_thread_reply") else "scheduled"
+    print(f"[daily_planner] Handling {event_type} request for channel {channel or 'unknown'} user {event.get('user_id')}")
 
     if not slack_token or not channel:
         return {"statusCode": 500, "body": "Slack not configured"}
@@ -137,6 +145,7 @@ def handle_scheduled(
     if user_message:
         user_prompt += f"\n\nUser request: {user_message}"
     draft = call_openai(system_prompt, user_prompt, openai_key)
+    log_draft_length(draft, "scheduled")
     resp = post_slack_message(slack_token, channel, draft)
     thread_ts = resp.get("ts")
     if table_name and thread_ts:
@@ -160,6 +169,7 @@ def handle_thread(event, system_prompt, openai_key, hevy_api_key, slack_token, c
         "Adjust plan/targets respecting soreness/equipment notes. Keep concise."
     )
     draft = call_openai(system_prompt, user_prompt, openai_key)
+    log_draft_length(draft, "thread")
     resp = post_slack_message(slack_token, channel, draft, thread_ts=thread_ts)
     if table_name:
         store_message(table_name, thread_ts, "user", user_text, agent="daily_planner")
