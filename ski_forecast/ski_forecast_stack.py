@@ -4,6 +4,9 @@ from aws_cdk import (
     aws_lambda as lambda_,
     aws_events as events,
     aws_events_targets as targets,
+    aws_cloudwatch as cloudwatch,
+    aws_cloudwatch_actions as cw_actions,
+    aws_sns as sns,
 )
 from constructs import Construct
 
@@ -84,3 +87,71 @@ class SkiForecastStack(Stack):
 
         # Add analyzer Lambda as target for the EventBridge rule
         rule.add_target(targets.LambdaFunction(ski_analyzer_lambda))
+
+        # Get email from context for alarm notifications
+        alarm_email = self.node.try_get_context("ski_alarm_email")
+
+        if alarm_email and alarm_email != "NOT_CONFIGURED":
+            # Create SNS topic for alarm notifications
+            alarm_topic = sns.Topic(
+                self,
+                "SkiForecastAlarmTopic",
+                display_name="Ski Forecast Lambda Failures",
+                topic_name="SkiForecastAlarms"
+            )
+
+            # Subscribe email to topic
+            sns.Subscription(
+                self,
+                "EmailSubscription",
+                topic=alarm_topic,
+                endpoint=alarm_email,
+                protocol=sns.SubscriptionProtocol.EMAIL
+            )
+
+            # Create CloudWatch alarm for Lambda errors
+            error_alarm = cloudwatch.Alarm(
+                self,
+                "SkiAnalyzerErrorAlarm",
+                metric=ski_analyzer_lambda.metric_errors(
+                    period=Duration.hours(1),
+                    statistic="Sum"
+                ),
+                threshold=1,
+                evaluation_periods=1,
+                datapoints_to_alarm=1,
+                alarm_description="Alert when ski analyzer Lambda has errors",
+                alarm_name="SkiForecast-Lambda-Errors",
+                treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING
+            )
+
+            # Add SNS action to alarm
+            error_alarm.add_alarm_action(cw_actions.SnsAction(alarm_topic))
+
+            # Create CloudWatch alarm for no successful invocations
+            no_invocations_alarm = cloudwatch.Alarm(
+                self,
+                "SkiAnalyzerNoInvocationsAlarm",
+                metric=ski_analyzer_lambda.metric_invocations(
+                    period=Duration.hours(25),
+                    statistic="Sum"
+                ),
+                threshold=1,
+                comparison_operator=cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+                evaluation_periods=1,
+                datapoints_to_alarm=1,
+                alarm_description="Alert when ski analyzer Lambda hasn't run in 25 hours",
+                alarm_name="SkiForecast-No-Invocations",
+                treat_missing_data=cloudwatch.TreatMissingData.BREACHING
+            )
+
+            # Add SNS action to alarm
+            no_invocations_alarm.add_alarm_action(cw_actions.SnsAction(alarm_topic))
+
+            print(f"✅ CloudWatch alarms configured with notifications to {alarm_email}")
+            print("   You'll need to confirm the SNS subscription via email after deployment")
+        else:
+            print("⚠️  Warning: ski_alarm_email not provided in context")
+            print("   CloudWatch alarms will not be created")
+            print("   You can provide it during deployment:")
+            print("   cdk deploy -c ski_alarm_email=your@email.com")

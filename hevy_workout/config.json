@@ -33,7 +33,7 @@
     "workout_planning": {
       "prompt_file": "workout_planning_system.txt",
       "prompt_version": "v1",
-      "model": "gpt-5.1",
+      "model": "gpt-5-mini",
       "temperature": 1.0,
       "max_completion_tokens": 3000
     }

@@ -71,13 +71,71 @@ schedule=events.Schedule.cron(
 )
 ```
 
+## Testing
+
+### Quick Health Check
+```bash
+./ski_forecast/test_local.sh
+```
+
+### Run Unit Tests
+```bash
+python3 -m pytest ski_forecast/test_lambda.py -v
+```
+
+### Manual Lambda Test
+```bash
+aws lambda invoke \
+  --function-name $(aws lambda list-functions --query "Functions[?contains(FunctionName, 'SkiAnalyzerFunction')].FunctionName" --output text) \
+  /tmp/test-output.json
+cat /tmp/test-output.json
+```
+
 ## Deployment
 
+### Standard Deployment
 ```bash
 # Deploy the ski forecast stack
 source .venv/bin/activate
 cdk deploy SkiForecastStack
 ```
+
+### Deployment with CloudWatch Alarms
+```bash
+# Deploy with email alerts for failures
+cdk deploy SkiForecastStack -c ski_alarm_email=your@email.com
+```
+
+**Note**: You'll receive an SNS subscription confirmation email on first deployment with alarms.
+
+The CloudWatch alarms will notify you if:
+- The Lambda function has any errors
+- The Lambda hasn't run successfully in 25 hours
+
+## Monitoring
+
+### View Recent Logs
+```bash
+# All logs from last 24 hours
+aws logs tail /aws/lambda/SkiForecastStack-SkiAnalyzerFunction* --since 24h --format short
+
+# Only errors
+aws logs tail /aws/lambda/SkiForecastStack-SkiAnalyzerFunction* --since 24h --filter-pattern "ERROR"
+```
+
+### Check Lambda Status
+```bash
+# Get function configuration and status
+aws lambda get-function-configuration \
+  --function-name $(aws lambda list-functions --query "Functions[?contains(FunctionName, 'SkiAnalyzerFunction')].FunctionName" --output text)
+```
+
+### Check CloudWatch Alarms
+```bash
+aws cloudwatch describe-alarms --alarm-name-prefix SkiForecast
+```
+
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed debugging instructions.
 
 ## Sample Output
 

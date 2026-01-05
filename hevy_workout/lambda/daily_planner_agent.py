@@ -120,7 +120,7 @@ def handler(event, context):
         )
 
 
-def build_context(hevy_api_key: str, days_workouts: int = 9, days_frequency: int = 30) -> str:
+def build_context(hevy_api_key: str, days_workouts: int = 5, days_frequency: int = 30) -> str:
     weekly_goal = hevy_tools.fetch_latest_weekly_goal_doc()
     workouts = hevy_tools.fetch_and_format_recent_workouts(api_key=hevy_api_key, days=days_workouts)
     freq = hevy_tools.fetch_recent_exercise_frequency(api_key=hevy_api_key, days=days_frequency)
@@ -136,7 +136,7 @@ def handle_scheduled(
     table_name,
     user_message: str | None = None,
 ):
-    context = build_context(hevy_api_key, days_workouts=9, days_frequency=30)
+    context = build_context(hevy_api_key, days_workouts=5, days_frequency=30)
     user_prompt = (
         "Scheduled daily planner kickoff for today. Propose 1-3 workout options aligned to weekly goals, "
         "respecting last 2 days for recovery. Include main lifts/accessories and targets where clear. "
@@ -161,7 +161,7 @@ def handle_thread(event, system_prompt, openai_key, hevy_api_key, slack_token, c
 
     history = get_history(table_name, thread_ts) if table_name else []
     history_text = "\n".join([f"{m['role']}: {m['content']}" for m in history])
-    context = build_context(hevy_api_key, days_workouts=9, days_frequency=30)
+    context = build_context(hevy_api_key, days_workouts=5, days_frequency=30)
 
     user_prompt = (
         f"Thread refinement for today's workout.\nUser said: {user_text}\n\n"

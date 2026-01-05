@@ -12,7 +12,7 @@ import urllib.error
 from datetime import datetime
 from typing import Dict, Any
 
-from ski_forecast.config import get_agent_config, get_openai_api_url, load_prompt_text
+from config import get_agent_config, get_openai_api_url, load_prompt_text
 
 AGENT_CONFIG = get_agent_config("ski_analyzer")
 OPENAI_API_URL = get_openai_api_url()
